@@ -643,7 +643,8 @@ function zonesView(a) {
     <div><label class="f">Puissance / poids</label><div id="wkg" class="title" style="padding:8px 0">${wkg(a)}</div></div></div></div>`;
   const run = `<div class="sec">Zones d'allure (selon VMA)</div><div class="card" id="zal">${zAl(a)}</div><div class="sec">Temps de passage selon la VMA</div><div class="card" id="zpass">${zPass(a)}</div>`;
   const bike = `<div class="sec">Zones de puissance (% FTP)</div><div class="card" id="zbk">${zBk(a)}</div>`;
-  return phys + `<div class="sec">Zones de fréquence cardiaque</div><div class="card" id="zfc">${zFc(a)}</div>`
+  const sportsCard = S.role === 'coach' ? `<div class="card"><div style="font-weight:800">🏅 Sports pratiqués</div><p class="small mut" style="margin:4px 0 0">Ils déterminent les types de séance proposés à ${esc(a.name)}.</p>${sportChips(a)}</div>` : '';
+  return sportsCard + phys + `<div class="sec">Zones de fréquence cardiaque</div><div class="card" id="zfc">${zFc(a)}</div>`
     + (d === 'bike' ? bike + run : run + bike) + (d === 'hyrox' ? hyroxBlock(a) : '');
 }
 const PASS = [[200, '200 m'], [400, '400 m'], [800, '800 m'], [1000, '1 km'], [2000, '2 km'], [3000, '3 km'], [5000, '5 km'], [10000, '10 km'], [21097, 'Semi'], [42195, 'Marathon']];
@@ -1143,9 +1144,9 @@ const A_ = {
     (ui.vurl = ui.vurl || {})[path] = data.signedUrl; render();
     setTimeout(() => { const el = [...document.querySelectorAll('audio')].find(x => x.getAttribute('src') === data.signedUrl); if (el) el.play().catch(() => {}); }, 150);
   },
-  sportsDrop() { ui.sportsOpen = !ui.sportsOpen; S.role === 'coach' ? A_.athMenu() : render(); },
+  sportsDrop() { ui.sportsOpen = !ui.sportsOpen; S.role === 'coach' && ui.modal ? A_.athMenu() : render(); },
   toggleSport(t) { const coach = S.role === 'coach', a = coach ? A(ui.aid) : A(S.linked); if (!a) return; const k = t.dataset.k, sp = a.sports = a.sports || [], i = sp.indexOf(k); i >= 0 ? sp.splice(i, 1) : sp.push(k);
-    if (coach) { upAthlete(a); A_.athMenu(); } else { const v = [...sp]; dbw(() => sb.rpc('athlete_set_sports', { p_athlete: a.id, p_sports: v })); render(); } },
+    if (coach) { upAthlete(a); ui.modal ? A_.athMenu() : render(); } else { const v = [...sp]; dbw(() => sb.rpc('athlete_set_sports', { p_athlete: a.id, p_sports: v })); render(); } },
   athMenu() { const a = A(ui.aid); ui.modal = `<h3>${esc(a.name)}</h3><label class="f">Discipline</label><select data-in="disc">${Object.entries(DISC).map(([k, v]) => `<option value="${k}" ${(a.disc || 'run') === k ? 'selected' : ''}>${v[1]} ${v[0]}</option>`).join('')}</select><label class="f">Sports pratiqués</label>${sportChips(a)}<p class="sub" style="margin-top:14px">Code athlète</p><div class="card title" style="text-align:center;letter-spacing:.25em;font-size:26px;color:var(--or)">${a.code}</div><button class="btn ghost block" data-a="archive">${a.archived ? 'Restaurer' : '🗂 Archiver'}</button><button class="btn danger block" style="margin-top:8px" data-a="delAthlete">🗑 Supprimer définitivement</button><button class="btn ghost block" style="margin-top:8px" data-a="closeModal">Fermer</button>`; render(); },
   archive() { const a = A(ui.aid); a.archived = !a.archived; upAthlete(a); ui.modal = null; ui.aid = null; render(); toast(a.archived ? 'Athlète archivé' : 'Athlète restauré'); },
   delAthlete() { if (!confirm('Supprimer définitivement cet athlète et tout son plan ?')) return; const id = ui.aid; dbw(() => sb.from('athletes').delete().eq('id', id)); S.athletes = S.athletes.filter(a => a.id !== id); ui.aid = null; ui.modal = null; render(); },
