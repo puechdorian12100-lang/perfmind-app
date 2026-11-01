@@ -380,6 +380,33 @@ const payOk = a => !!a.paidUntil && a.paidUntil >= iso(new Date());
 const payBtn = (a, edit) => { const ok = payOk(a), tip = ok ? 'Payé jusqu\'au ' + frD(a.paidUntil) : (a.paidUntil ? 'Paiement expiré le ' + frD(a.paidUntil) : 'Paiement non validé'); return edit ? `<button class="pay ${ok ? 'ok' : 'ko'}" data-a="payOpen" data-id="${a.id}" title="${tip}">€</button>` : `<span class="pay ${ok ? 'ok' : 'ko'}" title="${tip}">€</span>`; };
 const upAthlete = a => dbw(() => sb.from('athletes').update(athRow(a)).eq('id', a.id));
 const timers = {};
+const VAPID_PUB = 'BJJqMbfo85R5krutu241c-TtDGy8Tr0w-zud7akYEd8F-mHMP_lRyRI-425n0J9fLHfzZRakbwlvrQn5riQHI1E';
+const b64u = buf => btoa(String.fromCharCode(...new Uint8Array(buf))).replace(/\+/g, '-').replace(/\//g, '_').replace(/=+$/, '');
+const u8 = str => { const pd = '='.repeat((4 - str.length % 4) % 4), r = atob((str + pd).replace(/-/g, '+').replace(/_/g, '/')); return Uint8Array.from([...r].map(c => c.charCodeAt(0))); };
+const pushOk = () => 'serviceWorker' in navigator && 'PushManager' in window && 'Notification' in window;
+let pushOn = false;
+async function pushSave(sub) { const j = sub.toJSON ? sub.toJSON() : {}; return dbw(() => sb.rpc('save_push_subscription', { p_endpoint: sub.endpoint, p_p256dh: b64u(sub.getKey('p256dh')), p_auth: b64u(sub.getKey('auth')) })); }
+async function pushRefresh() {
+  if (!pushOk() || AUTH.stage !== 'app') return;
+  try {
+    const reg = await navigator.serviceWorker.ready; let sub = await reg.pushManager.getSubscription();
+    if (lsGet('perfmind.push') === '1' && Notification.permission === 'granted') {
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(VAPID_PUB) });
+      await pushSave(sub); pushOn = true;
+    } else pushOn = false;
+  } catch (e) { console.error(e); pushOn = false; }
+  if (ui.tab === 'more' && !ui.modal) render();
+}
+async function pushOffSilently() {
+  lsSet('perfmind.push', '0'); pushOn = false;
+  try { const reg = await navigator.serviceWorker.ready, sub = await reg.pushManager.getSubscription(); if (sub) { await sb.rpc('remove_push_subscription', { p_endpoint: sub.endpoint }); await sub.unsubscribe(); } if (navigator.clearAppBadge) navigator.clearAppBadge().catch(() => {}); } catch (e) {}
+}
+function pushCard() {
+  if (!pushOk()) return `<div class="card"><div style="font-weight:800">🔔 Notifications</div><p class="small mut" style="margin:4px 0 0">Pour recevoir les notifications de messages, installe l'app sur ton écran d'accueil (Partager → Sur l'écran d'accueil), puis rouvre-la depuis l'icône.</p></div>`;
+  const den = Notification.permission === 'denied';
+  return `<div class="card row"><div class="sp"><div style="font-weight:800">🔔 Notifications de messages</div><p class="small mut" style="margin:2px 0 0">Alerte et pastille sur l'icône à chaque nouveau message.${den ? ' Bloquées dans les réglages du téléphone : autorise-les pour cette app.' : ''}</p></div><button class="btn sm ${pushOn ? '' : 'ghost'}" data-a="pushToggle">${pushOn ? 'Activées' : 'Désactivées'}</button></div>`;
+}
+const saveMyNotes = a => { clearTimeout(timers.notes); timers.notes = setTimeout(() => dbw(() => sb.rpc('athlete_update_notes', { p_athlete: a.id, p_constraints: a.constraints || '', p_days_off: a.daysOff || [] })), 600); };
 function upAthleteDeb(a) { clearTimeout(timers[a.id]); timers[a.id] = setTimeout(() => upAthlete(a), 600); }
 const sessRow = (a, d, s) => ({ id: s.id, athlete_id: a.id, date: d, type: s.type, title: s.title || '', dur: num(s.dur), dist: num(s.dist), elev: num(s.elev), descr: s.desc || '', done: !!s.done, feel: s.feel || '', rpe: s.rpe ? +s.rpe : null });
 const upSession = (a, d, s) => dbw(() => sb.from('sessions').upsert(sessRow(a, d, s)));
@@ -430,7 +457,7 @@ async function boot() {
     if (S.role === 'athlete') { S.linked = (S.athletes[0] || {}).id || null; ui.tab = 'plan'; AUTH.stage = S.linked ? 'app' : 'link'; }
     else { if (ui.tab === 'plan') ui.tab = 'team'; AUTH.stage = 'app'; }
     AUTH.err = ''; AUTH.info = '';
-    if (AUTH.stage === 'app') subscribeRealtime();
+    if (AUTH.stage === 'app') { subscribeRealtime(); pushRefresh(); }
     render();
   } catch (e) { console.error(e); AUTH.err = FR_ERR(e.message || ''); AUTH.stage = 'login'; render(); }
   finally { booting = false; }
@@ -507,6 +534,7 @@ function render() {
   else if (ui.tab === 'msgs') body = msgsView();
   else body = moreView();
   const totalUnread = S.role === 'coach' ? S.athletes.filter(a => !a.archived).reduce((n, a) => n + unread(a), 0) : unread(A(S.linked));
+  try { if (navigator.setAppBadge) (totalUnread ? navigator.setAppBadge(totalUnread) : navigator.clearAppBadge()).catch(() => {}); } catch (e) {}
   app.innerHTML = `<header class="top">${logo(S.dark)}${wm()}<span class="sync">${syncErr ? 'Erreur de synchro' : pending ? 'Synchro…' : 'Enregistré'}</span></header>
   <main>${body}</main>
   <nav class="tabs">${tabs.map(([k, i, l]) => `<button class="${ui.tab === k ? 'on' : ''}" data-a="tab" data-k="${k}"><span class="ic">${i}</span>${l}${k === 'msgs' && totalUnread ? '<i class="dot"></i>' : ''}</button>`).join('')}</nav>
@@ -573,7 +601,7 @@ function athleteView() {
   else if (ui.sub === 'goals') inner = goalsView(a);
   else if (ui.sub === 'notes') inner = notesView(a);
   else inner = trackView(a);
-  if (S.role === 'athlete' && (ui.sub === 'zones' || ui.sub === 'notes')) inner = inner.replace(/<(input|textarea)(\s)/g, '<$1 readonly$2');
+  if (S.role === 'athlete' && ui.sub === 'zones') inner = inner.replace(/<(input|textarea)(\s)/g, '<$1 readonly$2');
   return `<div class="row" style="margin-bottom:12px">${back}<div class="avatar">${esc(a.name.trim().slice(0, 2).toUpperCase())}</div><h1 class="title sp">${esc(a.name)}</h1>${payBtn(a, S.role === 'coach')}${menu}</div>
   <div class="pill-row">${SUBS.map(([k, l]) => `<button class="pill ${ui.sub === k ? 'on' : ''}" data-a="sub" data-k="${k}">${l}</button>`).join('')}</div>${inner}`;
 }
@@ -775,6 +803,7 @@ function moreView() {
   const lg = S.role === 'coach' ? legacyData() : null;
   return `<h1 class="title">Régla<em>ges</em></h1><p class="sub">${S.role === 'coach' ? 'Compte coach' : 'Compte athlète'} · ${esc(AUTH.user ? AUTH.user.email : '')}</p>
   <div class="card row"><div class="sp"><div style="font-weight:800">🌙 Mode sombre</div></div><button class="btn sm ${S.dark ? '' : 'ghost'}" data-a="dark">${S.dark ? 'Activé' : 'Désactivé'}</button></div>
+  ${pushCard()}
   ${S.role === 'athlete' ? mySports() + myPhys() : ''}
   ${S.role === 'coach' ? `<div class="card"><label class="f" style="margin-top:0">Ton nom de coach</label><input type="text" data-in="coach" value="${esc(S.coach)}" placeholder="Dorian Puech"></div>
   ${lg ? `<button class="btn block" data-a="importLegacy" style="margin-bottom:8px">Importer les données de cet appareil (${lg.athletes.length} athlète${lg.athletes.length > 1 ? 's' : ''})</button>` : ''}
@@ -1038,7 +1067,20 @@ const A_ = {
     boot();
   },
   go(t) { AUTH.stage = t.dataset.k; AUTH.err = ''; AUTH.info = ''; render(); },
-  async logout() { if (!confirm('Te déconnecter ?')) return; await sb.auth.signOut(); },
+  async logout() { if (!confirm('Te déconnecter ?')) return; await pushOffSilently(); await sb.auth.signOut(); },
+  async pushToggle() {
+    if (!pushOk()) return toast('Installe l\'app sur l\'écran d\'accueil pour activer les notifications');
+    if (pushOn) { await pushOffSilently(); toast('Notifications désactivées'); return render(); }
+    const perm = await Notification.requestPermission();
+    if (perm !== 'granted') { toast('Notifications refusées : autorise-les dans les réglages du téléphone'); return render(); }
+    try {
+      const reg = await navigator.serviceWorker.ready; let sub = await reg.pushManager.getSubscription();
+      if (!sub) sub = await reg.pushManager.subscribe({ userVisibleOnly: true, applicationServerKey: u8(VAPID_PUB) });
+      const r = await pushSave(sub); if (!r) return;
+      lsSet('perfmind.push', '1'); pushOn = true; toast('Notifications activées');
+    } catch (e) { console.error(e); toast('Activation impossible sur cet appareil'); }
+    render();
+  },
   tab(t) { ui.tab = t.dataset.k; if (ui.tab === 'team') ui.aid = null; ui.thread = null; ui.modal = null; render(); },
   bg(t, e) { if (e.target === t) closeM(); }, closeModal: closeM,
   range(t) { ui.range = t.dataset.k; ui.wk = ui.range === 'month' ? new Date(ui.wk.getFullYear(), ui.wk.getMonth(), 1) : monday(ui.wk); render(); },
@@ -1155,7 +1197,7 @@ const A_ = {
     const se = raceSess(g, { dist: f.get('dist'), elev: f.get('elev'), target: f.get('target').trim(), info: f.get('info').trim() });
     (a.sessions[g.date] = a.sessions[g.date] || []).push(se); upSession(a, g.date, se); raceDone(g.id); closeM(); toast('🏁 Jour de course ajouté au plan'); },
   delGoal(t) { const a = A(ui.aid), id = t.dataset.id, g = a.goals.find(x => x.id === id); if (g && S.role === 'athlete' && !g.byAthlete) return; if (g && S.role === 'coach') { const rs = (a.sessions[g.date] || []).filter(x => x.type === 'race' && x.title === '🏁 ' + g.name); rs.forEach(x => dbw(() => sb.from('sessions').delete().eq('id', x.id))); a.sessions[g.date] = (a.sessions[g.date] || []).filter(x => !rs.includes(x)); } a.goals = a.goals.filter(g => g.id !== id); dbw(() => sb.from('goals').delete().eq('id', id)); render(); },
-  dayOff(t) { if (S.role !== 'coach') return; const a = A(ui.aid), i = +t.dataset.k, k = a.daysOff || (a.daysOff = []); const p = k.indexOf(i); p >= 0 ? k.splice(p, 1) : k.push(i); upAthlete(a); render(); },
+  dayOff(t) { const a = A(ui.aid); if (!a) return; const i = +t.dataset.k, k = a.daysOff || (a.daysOff = []); const p = k.indexOf(i); p >= 0 ? k.splice(p, 1) : k.push(i); S.role === 'coach' ? upAthlete(a) : saveMyNotes(a); render(); },
   /* messages */
   openThread(t) { ui.thread = t.dataset.id; render(); window.scrollTo(0, document.body.scrollHeight); },
   backThread() { ui.thread = null; render(); },
@@ -1211,7 +1253,7 @@ document.addEventListener('input', e => {
   else if (k === 'hxPace') { const a = A(ui.aid); a.hxPace = t.value; upAthleteDeb(a); $('#hxtot').innerHTML = hxTotHtml(a); }
   else if (k === 'disc') { const a = A(ui.aid); a.disc = t.value; upAthlete(a); ui.modal = null; render(); }
   else if (k === 'pmFocus') { ui.pm.focus = t.value; ui.gen = null; render(); }
-  else if (k === 'constraints') { const a = A(ui.aid); a.constraints = t.value; upAthleteDeb(a); }
+  else if (k === 'constraints') { const a = A(ui.aid); a.constraints = t.value; S.role === 'athlete' ? saveMyNotes(a) : upAthleteDeb(a); }
   else if (k === 'coach') { S.coach = t.value; clearTimeout(timers.coach); timers.coach = setTimeout(() => dbw(() => sb.from('profiles').update({ coach_name: S.coach }).eq('id', AUTH.user.id)), 600); }
   else if (k === 'pmDur') { ui.pm.dur = +t.value; ui.gen = null; }
   else if (k === 'pmFmt') { ui.pm.fmt = t.value; ui.gen = null; }
