@@ -268,7 +268,7 @@ function targets(desc, a) {
   }
   return out;
 }
-const fmtMin = sec => { const m = Math.round(sec / 60); return m >= 60 ? Math.floor(m / 60) + ' h ' + pad(m % 60) : m + ' min'; };
+const fmtMin = sec => fmtDur(sec / 60);
 
 /* ============ Constantes métier ============ */
 const STYPES = {
@@ -373,7 +373,7 @@ async function dbw(fn) {
   catch (e) { console.error(e); syncErr = true; toast(/jwt|token/i.test(e.message || '') ? 'Session expirée, reconnecte-toi' : 'Erreur de synchronisation'); return null; }
   finally { pending--; setSync(); }
 }
-const athRow = a => ({ name: a.name, archived: !!a.archived, disc: a.disc || 'run', fcmax: num(a.fcmax), fcrest: num(a.fcrest), vma: num(a.vma), ftp: num(a.ftp), weight: num(a.weight), hx_pace: a.hxPace || null, sports: a.sports || [], hx: a.hx || {}, constraints: a.constraints || '', days_off: a.daysOff || [] });
+const athRow = a => ({ name: a.name, archived: !!a.archived, disc: a.disc || 'run', fcmax: num(a.fcmax), fcrest: num(a.fcrest), vma: num(a.vma), ftp: num(a.ftp), weight: num(a.weight), hx_pace: a.hxPace || null, sports: a.sports || [], hx: a.hx || {}, constraints: a.constraints || '', days_off: a.daysOff || [], city: (a.city || '').trim() || null });
 const addMonth = d => { const x = new Date(d.getFullYear(), d.getMonth() + 1, 1); x.setDate(Math.min(d.getDate(), new Date(x.getFullYear(), x.getMonth() + 1, 0).getDate())); return x; };
 const frD = s => parse(s).toLocaleDateString('fr-FR');
 const payRef = () => (ui.tab === 'team' && !ui.aid && ui.range === 'month') ? iso(new Date()) : iso(addDays(monday(ui.wk), 6));
@@ -433,7 +433,7 @@ async function loadAll() {
     fetchAll('athletes', ['created_at', 'id']), fetchAll('sessions', ['date', 'created_at', 'id']), fetchAll('weeks', ['athlete_id', 'week']),
     fetchAll('goals', ['date', 'id']), fetchAll('messages', ['created_at', 'id']), fetchAll('templates', ['title', 'id'])]);
   const by = {};
-  S.athletes = ath.map(r => { const a = { id: r.id, name: r.name, code: r.code, archived: r.archived, disc: r.disc, fcmax: nz(r.fcmax), fcrest: nz(r.fcrest), vma: nz(r.vma), ftp: nz(r.ftp), weight: nz(r.weight), hxPace: r.hx_pace || '', sports: r.sports || [], paidUntil: r.paid_until || '', hx: r.hx || {}, constraints: r.constraints || '', daysOff: r.days_off || [], user_id: r.user_id, weeks: {}, goals: [], sessions: {}, messages: [] }; by[a.id] = a; return a; });
+  S.athletes = ath.map(r => { const a = { id: r.id, name: r.name, code: r.code, archived: r.archived, disc: r.disc, fcmax: nz(r.fcmax), fcrest: nz(r.fcrest), vma: nz(r.vma), ftp: nz(r.ftp), weight: nz(r.weight), hxPace: r.hx_pace || '', sports: r.sports || [], paidUntil: r.paid_until || '', hx: r.hx || {}, city: r.city || '', constraints: r.constraints || '', daysOff: r.days_off || [], user_id: r.user_id, weeks: {}, goals: [], sessions: {}, messages: [] }; by[a.id] = a; return a; });
   ses.forEach(r => { const a = by[r.athlete_id]; if (a) (a.sessions[r.date] = a.sessions[r.date] || []).push({ id: r.id, type: STYPES[r.type] ? r.type : 'other', title: r.title, dur: nz(r.dur), dist: nz(r.dist), elev: nz(r.elev), desc: r.descr, done: r.done, feel: r.feel, rpe: r.rpe || '', byAthlete: !!r.by_athlete }); });
   wk.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].weeks[r.week] = r.type; });
   gl.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].goals.push({ id: r.id, name: r.name, date: r.date, prio: r.prio, details: r.details || '', byAthlete: !!r.by_athlete }); });
@@ -617,13 +617,13 @@ function planView(a) {
     const d = addDays(mon, i), k = iso(d), arr = a.sessions[k] || [];
     const off = (a.daysOff || []).includes(i);
     days += `<div class="day ${k === today ? 'today' : ''} ${off ? 'off' : ''}">
-      <div class="row"><h4>${DJ[i]} ${d.getDate()} ${MOIS[d.getMonth()].slice(0, 3).toLowerCase()}.</h4>${off ? '<span class="badge" style="background:var(--line);color:var(--mut)">Jour off</span>' : ''}<span class="sp"></span>
+      <div class="row"><h4>${DJ[i]} ${d.getDate()} ${MOIS[d.getMonth()].slice(0, 3).toLowerCase()}.</h4>${wxDay(a, k)}${off ? '<span class="badge" style="background:var(--line);color:var(--mut)">Jour off</span>' : ''}<span class="sp"></span>
       ${S.role === 'coach' ? `<button class="btn sm ghost" data-a="addSess" data-d="${k}">+ Séance</button>` : `<button class="btn sm ghost" data-a="addDone" data-d="${k}">+ Séance faite</button>`}</div>
       ${a.goals.filter(g => g.date === k).map(g => `<div style="margin-top:6px"><span class="badge" style="background:#B3261E;color:#fff">🎯 Objectif ${esc(g.prio)} · ${esc(g.name)}</span></div>`).join('')}
       ${arr.map(s => `<div class="sess ${s.done ? 'done' : ''}">
         <span class="sd" style="background:${STYPES[s.type][1]}"></span>
         <div class="sp" data-a="editSess" data-d="${k}" data-id="${s.id}" style="cursor:pointer"><div class="t">${esc(s.title || STYPES[s.type][0])}</div>
-        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + s.dur + ' min' : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div></div>
+        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + fmtDur(s.dur) : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div></div>
         <button class="chk ${s.done ? 'on' : ''}" data-a="toggleDone" data-d="${k}" data-id="${s.id}" aria-label="Réalisée">✓</button></div>`).join('')}
     </div>`;
   }
@@ -743,7 +743,10 @@ function notesView(a) {
   return `<div class="card"><label class="f" style="margin-top:0">🚫 Jours sans entraînement (récurrents)</label>
   <div class="chips">${DJ.map((d, i) => `<button class="pill ${(a.daysOff || []).includes(i) ? 'on' : ''}" data-a="dayOff" data-k="${i}">${d}</button>`).join('')}</div>
   <label class="f">⚠️ Contraintes perso (santé, matériel, environnement…)</label>
-  <textarea data-in="constraints" placeholder="Ex. tendinite à surveiller, pas de piste en semaine, trail en terrain vallonné…">${esc(a.constraints)}</textarea></div>`;
+  <textarea data-in="constraints" placeholder="Ex. tendinite à surveiller, pas de piste en semaine, trail en terrain vallonné…">${esc(a.constraints)}</textarea>
+  <label class="f">📍 Lieu de vie (pour la météo du plan)</label>
+  <input type="text" data-in="city" value="${esc(a.city)}" placeholder="Ex. Millau ou Millau, France" autocomplete="address-level2">
+  <div id="cityInfo" class="small mut" style="margin-top:6px">${wxInfo(a)}</div></div>`;
 }
 
 function barSvg(data) {
@@ -909,31 +912,32 @@ function stopTimer() { TM = null; cancelAnimationFrame(raf); const el = $('#tm')
 const sessForm = (s, d) => { s.type = s.type || typesFor(A(ui.aid))[0]; return `<h3>${s.id ? 'Modifier la séance' : 'Nouvelle séance'}</h3><p class="small mut" style="margin:0">${parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
   ${!s.id && S.role === 'coach' ? `<label class="f">Depuis un modèle</label><div id="tplPick">${tplPick('')}</div>` : ''}
   <form id="f"><label class="f">Type</label><select name="type" data-in="stype">${[...new Set([...typesFor(A(ui.aid)), s.type])].map(k => `<option value="${k}" ${s.type === k ? 'selected' : ''}>${STYPES[k][0]}</option>`).join('')}</select><div id="ppgPick">${ppgPick(s.type)}</div>
-  <label class="f">Titre</label><input type="text" name="title" value="${esc(s.title)}" placeholder="Ex. 8 × 400 m">
-  <div class="grid2"><div><label class="f">Durée (min)</label><input type="number" inputmode="numeric" name="dur" data-in="sman" value="${esc(s.dur)}"></div><div><label class="f">Distance (km)</label><input type="number" inputmode="decimal" step="0.1" name="dist" data-in="sman" value="${esc(s.dist)}"></div></div>
+  <label class="f">Titre</label><input type="text" name="title" data-in="sdesc" value="${esc(s.title)}" placeholder="Ex. 8 × 400 m, Sortie longue 1h30">
+  <div class="grid2"><div><label class="f">Durée (min) <span id="durH" style="text-transform:none;color:var(--or)">${+s.dur >= 59 ? '= ' + fmtDur(s.dur) : ''}</span></label><input type="number" inputmode="numeric" name="dur" data-in="sman" value="${esc(s.dur)}"></div><div><label class="f">Distance (km)</label><input type="number" inputmode="decimal" step="0.1" name="dist" data-in="sman" value="${esc(s.dist)}"></div></div>
   <label class="f">Dénivelé positif (m)</label><input type="number" inputmode="numeric" name="elev" value="${esc(s.elev)}">
   <label class="f">Description</label><textarea name="desc" data-in="sdesc" placeholder="Ex. 15′ échauffement + 6x3′ / 1′30 récup + 10′ retour au calme">${esc(s.desc)}</textarea>
-  <div id="est">${estHtml(estimate(s.desc, A(ui.aid), s.type), targets(s.desc, A(ui.aid) || {}), A(ui.aid) || {})}</div>
+  <div id="est">${estHtml(estBoth(s.title, s.desc, A(ui.aid), s.type), targets(s.desc, A(ui.aid) || {}), A(ui.aid) || {})}</div>
   ${s.id && s.rpe ? `<label class="f">RPE (athlète)</label><div class="card" style="margin:0"><b>${s.rpe}/10</b> (${RPE_L[s.rpe - 1]})</div>` : ''}
   ${s.id ? `<label class="f">Description de l'athlète</label><input type="text" name="feel" value="${esc(s.feel)}" placeholder="Ex. jambes lourdes, bonne séance">` : ''}
   <div style="height:14px"></div><button class="btn block" type="button" data-a="saveSess" data-d="${d}" data-id="${s.id || ''}">Enregistrer</button>
   ${S.role === 'coach' ? `<button class="btn ghost block" type="button" style="margin-top:8px" data-a="saveTpl">Enregistrer comme modèle</button>` : ''}
   ${s.id ? `<button class="btn danger block" type="button" style="margin-top:8px" data-a="delSess" data-d="${d}" data-id="${s.id}">Supprimer</button>` : ''}
   <button class="btn ghost block" type="button" style="margin-top:8px" data-a="closeModal">Fermer</button></form>`; };
+function estBoth(title, desc, a, type) { const d = estimate(desc, a, type); if (d.sec) return d; const t = estimate(title, a, type); return t.sec ? { ...t, fromTitle: true } : d; }
 function estHtml(r, tg, a) {
   let h = '';
-  if (r.sec) h += `<div style="font-weight:800;color:var(--or)">⏱ Durée calculée : ${fmtMin(r.sec)}${r.km ? ' · ≈ ' + String(r.km).replace('.', ',') + ' km' : ''}</div>`;
+  if (r.sec) h += `<div style="font-weight:800;color:var(--or)">⏱ Durée calculée${r.fromTitle ? ' (titre)' : ''} : ${fmtMin(r.sec)}</div>`;
   if (r.needVma) h += `<div class="small mut">Renseigne la VMA ${S.role === 'coach' ? 'de l\'athlète' : ''} pour convertir les distances en temps.</div>`;
-  if (r.sec && +a.vma && !r.needVma) h += `<div class="small mut">Distances calculées avec une VMA de ${String(a.vma).replace('.', ',')} km/h. Sans intensité précisée : footing à ${calcCfg().foot} % VMA.</div>`;
+  if (r.sec && +a.vma && !r.needVma) h += `<div class="small mut">Distances converties en temps avec une VMA de ${String(a.vma).replace('.', ',')} km/h. Sans intensité précisée : footing à ${calcCfg().foot} % VMA.</div>`;
   if (tg.length) h += `<div class="chips">${tg.map(([l, v]) => `<span class="chip">${esc(l)} → <b>${esc(v)}</b></span>`).join('')}</div>`;
   if (!h && S.role === 'coach') h = '<div class="small mut">Écris la séance (ex. 20′ EF + 10x400m à 95% VMA / r 1′30) : la durée se calcule toute seule.</div>';
   return h ? `<div style="margin-top:8px">${h}</div>` : '';
 }
 function estUpd(fill) {
   const f = $('#f'), box = $('#est'); if (!f || !box) return;
-  const a = A(ui.aid) || {}, r = estimate(f.desc.value, a, f.type.value);
-  if (fill && r.sec) { if (f.dur.dataset.man !== '1') f.dur.value = Math.round(r.sec / 60); if (r.km && f.dist.dataset.man !== '1') f.dist.value = r.km; }
-  box.innerHTML = estHtml(r, targets(f.desc.value, a), a);
+  const a = A(ui.aid) || {}, r = estBoth(f.title.value, f.desc.value, a, f.type.value);
+  if (fill && r.sec) { if (f.dur.dataset.man !== '1') f.dur.value = Math.round(r.sec / 60); }
+  box.innerHTML = estHtml(r, targets(f.desc.value, a), a); durH();
 }
 /* ---- mémoire des séances (modèles automatiques) ---- */
 const normTxt = x => String(x || '').toLowerCase().replace(/[′’`]/g, "'").replace(/[″“”]/g, '"').replace(/[–—]/g, '-').replace(/\s+/g, ' ').replace(/[\s.,;!]+$/, '').trim();
@@ -1030,6 +1034,35 @@ function ppgOf(s, disc) {
   const sport = Object.keys(R_SPORTS).find(k => R_SPORTS[k] === m[3].trim()) || discSport(disc);
   return { type, dur: +m[2], sport };
 }
+/* ---- Météo 15 jours (Open-Meteo, sans clé) ---- */
+const WX = {}, wxKey = c => String(c || '').trim().toLowerCase();
+const WX_L = [[[0], '☀️', 'Ensoleillé'], [[1, 2], '🌤️', 'Éclaircies'], [[3], '☁️', 'Nuageux'], [[45, 48], '🌫️', 'Brouillard'], [[51, 53, 55, 56, 57], '🌦️', 'Bruine'], [[61, 63, 65, 66, 67], '🌧️', 'Pluie'], [[80, 81, 82], '🌦️', 'Averses'], [[71, 73, 75, 77, 85, 86], '🌨️', 'Neige'], [[95, 96, 99], '⛈️', 'Orage']];
+const wxSym = c => WX_L.find(x => x[0].includes(c)) || ['', '', ''];
+async function wxFetch(city) {
+  const k = wxKey(city), [name, hint] = city.split(',').map(x => x.trim());
+  WX[k] = { loading: true };
+  try {
+    const g = await (await fetch('https://geocoding-api.open-meteo.com/v1/search?count=10&language=fr&name=' + encodeURIComponent(name))).json();
+    const R = g.results || [], h = (hint || '').toLowerCase();
+    const p = (h && R.find(r => [r.country, r.country_code, r.admin1, r.admin2].some(v => v && String(v).toLowerCase().includes(h)))) || R.find(r => r.country_code === 'FR') || R[0];
+    if (!p) { WX[k] = { err: 'Lieu introuvable' }; return; }
+    const f = await (await fetch(`https://api.open-meteo.com/v1/forecast?latitude=${p.latitude}&longitude=${p.longitude}&daily=weather_code&forecast_days=15&timezone=auto`)).json();
+    const days = {}; (f.daily.time || []).forEach((d, i) => days[d] = f.daily.weather_code[i]);
+    WX[k] = { at: Date.now(), place: [p.name, p.admin1, p.country_code !== 'FR' ? p.country : ''].filter(Boolean).join(', '), days };
+    lsSet('perfmind.wx.' + k, JSON.stringify(WX[k]));
+  } catch (e) { WX[k] = { err: 'Météo indisponible', at: Date.now() }; }
+}
+function wxGet(a) {
+  const c = (a && a.city || '').trim(); if (!c) return null; const k = wxKey(c);
+  if (!WX[k]) { try { const v = JSON.parse(lsGet('perfmind.wx.' + k) || 'null'); if (v && v.days) WX[k] = v; } catch (e) {} }
+  const w = WX[k];
+  if (!w || (!w.loading && Date.now() - (w.at || 0) > 3 * 3600e3)) wxFetch(c).then(() => { if (ui.aid !== a.id) return; const ae = document.activeElement; if (ui.sub === 'plan' && !ui.modal && !(ae && /INPUT|TEXTAREA|SELECT/.test(ae.tagName))) render(); else { const el = $('#cityInfo'); if (el) el.innerHTML = wxInfo(a); } });
+  return WX[k];
+}
+const wxDay = (a, d) => { const w = wxGet(a); if (!w || !w.days || w.days[d] == null) return ''; const [, i, l] = wxSym(w.days[d]); return i ? `<span title="${l}" style="font-size:20px;line-height:1">${i}</span>` : ''; };
+const wxInfo = a => { if (!(a.city || '').trim()) return 'Ajoute la ville pour afficher la météo des 15 prochains jours dans le plan.'; const w = wxGet(a); return !w || w.loading ? 'Recherche de la météo…' : w.err ? '⚠️ ' + w.err + ' : vérifie le nom de la ville.' : '✓ Météo : ' + esc(w.place); };
+function fmtDur(m) { m = Math.round(+m || 0); return m >= 59 ? Math.floor(m / 60) + ' h' + (m % 60 ? ' ' + pad(m % 60) : '') : m + ' min'; }
+const durH = () => { const f = $('#f'), el = $('#durH'); if (f && el && f.dur) el.textContent = +f.dur.value >= 59 ? '= ' + fmtDur(f.dur.value) : ''; };
 const closeM = () => { ui.modal = null; ui.rpeTmp = null; render(); };
 const toast = t => { const e = document.createElement('div'); e.className = 'toast'; e.textContent = t; document.body.appendChild(e); setTimeout(() => e.remove(), 1800); };
 
@@ -1040,7 +1073,7 @@ function markRead(a) {
 const RPE_L = ['Très très facile', 'Très facile', 'Facile', 'Assez facile', 'Modéré', 'Un peu dur', 'Dur', 'Très dur', 'Presque maximal', 'Maximal'];
 const rpeSel = s => ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : (+s.rpe || 0);
 const rpeBtns = s => RPE_L.map((l, i) => `<button type="button" data-a="setRpe" data-id="${s.id}" data-k="${i + 1}" class="${rpeSel(s) === i + 1 ? 'on' : ''}"><b>${i + 1}</b> (${l})</button>`).join('');
-const athSessModal = (s, d) => `<h3>${esc(s.title || STYPES[s.type][0])}</h3><p class="small mut" style="margin:0">${parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} · ${STYPES[s.type][0]}${s.dur ? ' · ' + s.dur + ' min' : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}</p>
+const athSessModal = (s, d) => `<h3>${esc(s.title || STYPES[s.type][0])}</h3><p class="small mut" style="margin:0">${parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })} · ${STYPES[s.type][0]}${s.dur ? ' · ' + fmtDur(s.dur) : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}</p>
   ${s.desc ? `<div class="card" style="margin-top:12px;white-space:pre-wrap">${esc(s.desc)}</div>` : ''}
   ${ppgOf(s, (A(ui.aid) || {}).disc || 'run') ? `<button type="button" class="btn block" style="margin-top:10px" data-a="genFromSess" data-d="${d}" data-id="${s.id}">🎲 Générer ma séance</button>` : ''}
   ${(() => { const tg = targets(s.desc, A(ui.aid) || {}); return tg.length ? `<label class="f">Mes repères</label><div class="chips">${tg.map(([l, v]) => `<span class="chip">${esc(l)} → <b>${esc(v)}</b></span>`).join('')}</div>` : ''; })()}
@@ -1134,7 +1167,7 @@ const A_ = {
     const se = { id, type, title, dur: dur || '', dist: dist || '', elev: elev || '', desc: '', done: true, feel, rpe: rpe || '', byAthlete: true };
     (a.sessions[d] = a.sessions[d] || []).push(se);
     dbw(() => sb.rpc('athlete_add_session', { p_id: id, p_athlete: a.id, p_date: d, p_type: type, p_title: title, p_dur: dur, p_dist: dist, p_elev: elev, p_descr: '', p_feel: feel, p_rpe: rpe }));
-    const txt = '📝 Séance ajoutée par ' + a.name + ' (' + parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) + ') : ' + (title || STYPES[type][0]) + ' · ' + STYPES[type][0] + (dur ? ' · ' + dur + ' min' : '') + (dist ? ' · ' + dist + ' km' : '') + (elev ? ' · ' + elev + ' m D+' : '') + (rpe ? ' · RPE ' + rpe + '/10 (' + RPE_L[rpe - 1] + ')' : '') + (feel ? '\n' + feel : '');
+    const txt = '📝 Séance ajoutée par ' + a.name + ' (' + parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' }) + ') : ' + (title || STYPES[type][0]) + ' · ' + STYPES[type][0] + (dur ? ' · ' + fmtDur(dur) : '') + (dist ? ' · ' + dist + ' km' : '') + (elev ? ' · ' + elev + ' m D+' : '') + (rpe ? ' · RPE ' + rpe + '/10 (' + RPE_L[rpe - 1] + ')' : '') + (feel ? '\n' + feel : '');
     const m = { id: uid(), from: 'athlete', text: txt, ts: Date.now(), read: false }; a.messages.push(m);
     dbw(() => sb.from('messages').insert({ id: m.id, athlete_id: a.id, sender: 'athlete', body: txt }));
     ui.modal = null; ui.rpeTmp = null; ui.doneId = null; render(); toast('Séance enregistrée, ton coach est prévenu'); },
@@ -1171,7 +1204,7 @@ const A_ = {
   editSess(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); ui.modal = S.role === 'athlete' ? athSessModal(s, t.dataset.d) : sessForm(s, t.dataset.d); render(); },
   saveFeel(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); s.feel = $('#feel').value.trim(); const rv = ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : null; if (rv) s.rpe = rv; dbw(() => sb.rpc('athlete_save_session', { p_id: s.id, p_done: !!s.done, p_feel: s.feel, p_rpe: rv })); closeM(); },
   setRpe(t) { ui.rpeTmp = { id: t.dataset.id, v: +t.dataset.k }; document.querySelectorAll('#rpeList button').forEach(b => b.classList.toggle('on', b === t)); },
-  fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = tp.dist; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; f.dist.dataset.man = ''; estUpd(true); },
+  fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = tp.dist; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; estUpd(true); },
   saveSess(t) {
     const a = A(ui.aid), f = new FormData($('#f')), d = t.dataset.d, id = t.dataset.id;
     const v = { type: f.get('type'), title: f.get('title').trim(), dur: f.get('dur'), dist: f.get('dist'), elev: f.get('elev'), desc: f.get('desc'), feel: f.get('feel') || '' };
@@ -1185,7 +1218,7 @@ const A_ = {
   saveTpl() { const f = new FormData($('#f')); const title = f.get('title').trim(); if (!title) return toast('Donne un titre'); const tp = { id: uid(), title, type: f.get('type'), disc: (A(ui.aid) || {}).disc || 'run', dur: f.get('dur'), dist: f.get('dist'), elev: f.get('elev'), desc: f.get('desc') }; S.templates.push(tp); dbw(() => sb.from('templates').insert(tplRow(tp))); toast('Modèle enregistré'); },
   tplLib() {
     const ord = Object.keys(STYPES), cats = [...new Set(S.templates.map(t => t.type))].sort((x, y) => ord.indexOf(x) - ord.indexOf(y));
-    const row = t => `<div class="card row"><span class="sd" style="background:${STYPES[t.type][1]}"></span><div class="sp"><b>${esc(t.title)}</b><div class="small mut">${DISC[t.disc || 'run'][1]} ${t.dur ? t.dur + ' min' : ''}${t.dist ? ' · ' + t.dist + ' km' : ''}</div>
+    const row = t => `<div class="card row"><span class="sd" style="background:${STYPES[t.type][1]}"></span><div class="sp"><b>${esc(t.title)}</b><div class="small mut">${DISC[t.disc || 'run'][1]} ${t.dur ? fmtDur(t.dur) : ''}${t.dist ? ' · ' + t.dist + ' km' : ''}</div>
       <select data-in="tplType" data-id="${t.id}" style="margin-top:6px;padding:6px 8px;font-size:13px">${[...new Set([...TYPES_BY[t.disc || 'run'], t.type])].map(k => `<option value="${k}" ${k === t.type ? 'selected' : ''}>${STYPES[k][0]}</option>`).join('')}</select></div><button class="ic-btn" data-a="delTpl" data-id="${t.id}">🗑</button></div>`;
     ui.modal = `<h3>📚 Séances modèles</h3><p class="sub">Une séance que tu programmes 2 fois est gardée automatiquement, classée selon son type. Tu peux aussi en ajouter avec « Enregistrer comme modèle ».</p>
     <button class="btn ghost block" data-a="memoScan" style="margin-bottom:8px">🔍 Retrouver les séances répétées dans mes plans</button>
@@ -1265,11 +1298,12 @@ document.addEventListener('input', e => {
   else if (k === 'calc') { const c = calcCfg(); const v = +t.value; if (v > 0) { c[t.dataset.k] = v; lsSet('perfmind.calc', JSON.stringify(c)); } }
   else if (k === 'sdesc' || k === 'stype') { estUpd(true); if (k === 'stype' && $('#ppgPick')) $('#ppgPick').innerHTML = ppgPick(t.value); }
   else if (k === 'tplType') { const tp = S.templates.find(x => x.id === t.dataset.id); if (!tp) return; tp.type = t.value; dbw(() => sb.from('templates').update({ type: tp.type }).eq('id', tp.id)); A_.tplLib(); }
-  else if (k === 'sman') { t.dataset.man = t.value ? '1' : ''; if (!t.value) estUpd(true); }
+  else if (k === 'sman') { t.dataset.man = t.value ? '1' : ''; if (!t.value) estUpd(true); durH(); }
   else if (k === 'hx') { const a = A(ui.aid); (a.hx = a.hx || {})[t.dataset.k] = t.value; upAthleteDeb(a); $('#hxtot').innerHTML = hxTotHtml(a); }
   else if (k === 'hxPace') { const a = A(ui.aid); a.hxPace = t.value; upAthleteDeb(a); $('#hxtot').innerHTML = hxTotHtml(a); }
   else if (k === 'disc') { const a = A(ui.aid); a.disc = t.value; upAthlete(a); ui.modal = null; render(); }
   else if (k === 'pmFocus') { ui.pm.focus = t.value; ui.gen = null; render(); }
+  else if (k === 'city') { const a = A(ui.aid); a.city = t.value; clearTimeout(timers.city); timers.city = setTimeout(() => { if (S.role === 'athlete') dbw(() => sb.rpc('athlete_update_city', { p_athlete: a.id, p_city: a.city })); else upAthleteDeb(a); const c = a.city.trim(); if (c) wxFetch(c).then(() => { const el = $('#cityInfo'); if (el) el.innerHTML = wxInfo(a); }); else { const el = $('#cityInfo'); if (el) el.innerHTML = wxInfo(a); } }, 900); }
   else if (k === 'constraints') { const a = A(ui.aid); a.constraints = t.value; S.role === 'athlete' ? saveMyNotes(a) : upAthleteDeb(a); }
   else if (k === 'coach') { S.coach = t.value; clearTimeout(timers.coach); timers.coach = setTimeout(() => dbw(() => sb.from('profiles').update({ coach_name: S.coach }).eq('id', AUTH.user.id)), 600); }
   else if (k === 'pmDur') { ui.pm.dur = +t.value; ui.gen = null; }
