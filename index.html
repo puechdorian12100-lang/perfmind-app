@@ -440,6 +440,7 @@ async function loadAll() {
   msg.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].messages.push({ id: r.id, from: r.sender, text: r.body, ts: Date.parse(r.created_at), read: r.read, audioPath: r.audio_path || '' }); });
   S.templates = tpl.map(r => ({ id: r.id, disc: r.disc, title: r.title, type: r.type, dur: nz(r.dur), dist: nz(r.dist), elev: nz(r.elev), desc: r.descr }));
   if (S.role === 'coach' && !S.templates.length && !lsGet('perfmind.seeded.' + AUTH.user.id)) await seedTemplates();
+  try { const { data: pay } = await sb.from('coach_pay').select('*').limit(1).maybeSingle(); S.pay = pay || {}; } catch (e) { S.pay = {}; }
   raceSync();
 }
 
@@ -810,9 +811,10 @@ function moreView() {
   return `<h1 class="title">Régla<em>ges</em></h1><p class="sub">${S.role === 'coach' ? 'Compte coach' : 'Compte athlète'} · ${esc(AUTH.user ? AUTH.user.email : '')}</p>
   <div class="card row"><div class="sp"><div style="font-weight:800">🌙 Mode sombre</div></div><button class="btn sm ${S.dark ? '' : 'ghost'}" data-a="dark">${S.dark ? 'Activé' : 'Désactivé'}</button></div>
   ${pushCard()}
-  ${S.role === 'athlete' ? mySports() + myPhys() : ''}
+  ${S.role === 'athlete' ? payInfo() + mySports() + myPhys() : ''}
   ${S.role === 'coach' ? `<div class="card"><label class="f" style="margin-top:0">Ton nom de coach</label><input type="text" data-in="coach" value="${esc(S.coach)}" placeholder="Dorian Puech"></div>
   ${lg ? `<button class="btn block" data-a="importLegacy" style="margin-bottom:8px">Importer les données de cet appareil (${lg.athletes.length} athlète${lg.athletes.length > 1 ? 's' : ''})</button>` : ''}
+  ${payEdit()}
   ${calcSettings()}
   <button class="btn ghost block" data-a="exportData" style="margin-bottom:8px">Exporter mes données (JSON)</button>` : ''}
   <button class="btn ghost block" data-a="logout">Se déconnecter</button>`;
@@ -822,6 +824,23 @@ function mySports() {
   const a = A(S.linked) || {};
   return `<div class="card"><div style="font-weight:800">🏅 Mes sports</div><p class="small mut" style="margin:4px 0 0">Coche les sports que tu pratiques : ils apparaissent dans les types de séance de ton plan. Sans choix, ton plan reprend ta discipline principale.</p>${sportChips(a)}</div>
   <button class="btn block" style="margin-bottom:12px" data-a="seeStats">📊 Mon année en chiffres</button>`;
+}
+function payEdit() {
+  const P = S.pay || {}, fld = (k, l, ph, im) => `<label class="f">${l}</label><input type="text" data-in="pay" data-k="${k}" value="${esc(P[k])}" placeholder="${ph}" ${im ? `inputmode="${im}"` : ''} autocomplete="off">`;
+  return `<div class="card"><div style="font-weight:800">💳 Infos de paiement</div><p class="small mut" style="margin:4px 0 0">Affichées à tes athlètes dans leurs Réglages, avec des boutons pour copier.</p>
+  ${fld('holder', 'Titulaire du compte', 'Dorian Puech')}${fld('iban', 'IBAN', 'FR76 …')}${fld('bic', 'BIC', 'XXXXFRPPXXX')}
+  ${fld('phone', 'Téléphone Wero', '06 12 34 56 78', 'tel')}${fld('note', 'Message (tarif, référence à indiquer…)', 'Ex. 15 € / semaine, indique ton prénom')}</div>`;
+}
+function payInfo() {
+  const P = S.pay || {}, a = A(S.linked) || {};
+  if (!P.iban && !P.phone) return '';
+  const ok = payOk(a, iso(addDays(monday(new Date()), 6)));
+  const line = (l, v) => v ? `<div class="row" style="margin-top:10px"><div class="sp"><div class="small mut">${l}</div><b style="word-break:break-all">${esc(v)}</b></div><button class="btn sm ghost" data-a="copyTxt" data-v="${esc(v)}">Copier</button></div>` : '';
+  return `<div class="card"><div style="font-weight:800">💳 Payer mon coach</div>
+  <p class="small" style="margin:6px 0 0">${ok ? '✅ Semaine en cours réglée' + (a.paidUntil ? ' (jusqu\'au ' + frD(a.paidUntil) + ')' : '') : '❌ Semaine en cours à régler'}</p>
+  ${P.note ? `<p class="small mut" style="margin:6px 0 0">${esc(P.note)}</p>` : ''}
+  ${P.phone ? `<div style="margin-top:12px;font-weight:700">📱 Par Wero</div>${line('Téléphone' + (P.holder ? ' · ' + P.holder : ''), P.phone)}` : ''}
+  ${P.iban ? `<div style="margin-top:14px;font-weight:700">🏦 Par virement</div>${P.holder ? `<div class="small mut" style="margin-top:6px">Titulaire : <b>${esc(P.holder)}</b></div>` : ''}${line('IBAN', P.iban)}${line('BIC', P.bic)}` : ''}</div>`;
 }
 function myPhys() {
   const a = A(S.linked) || {}, fld = (k, l, step) => `<div><label class="f">${l}</label><input type="number" inputmode="${step ? 'decimal' : 'numeric'}" ${step ? 'step="0.1"' : ''} data-in="myphys" data-k="${k}" value="${esc(a[k])}"></div>`;
@@ -1255,6 +1274,7 @@ const A_ = {
   /* PPG */
   pmMode(t) { ui.pm.mode = t.dataset.k; ui.gen = null; render(); },
   pmDisc(t) { ui.pm.disc = t.dataset.k; ui.pm.focus = null; Object.assign(ui.pm, POOLS[ui.pm.disc].def); ui.gen = null; render(); },
+  copyTxt(t) { const v = t.dataset.v; (navigator.clipboard ? navigator.clipboard.writeText(v) : Promise.reject()).then(() => toast('Copié ✓'), () => { prompt('Copie ce texte :', v); }); },
   gen() { generate(); render(); },
   ppgSet(t) {
     const f = $('#f'), sp = $('#ppgS').value, dur = $('#ppgD').value, tn = R_TYPES[t.dataset.k];
@@ -1305,6 +1325,7 @@ document.addEventListener('input', e => {
   else if (k === 'pmFocus') { ui.pm.focus = t.value; ui.gen = null; render(); }
   else if (k === 'city') { const a = A(ui.aid); a.city = t.value; clearTimeout(timers.city); timers.city = setTimeout(() => { if (S.role === 'athlete') dbw(() => sb.rpc('athlete_update_city', { p_athlete: a.id, p_city: a.city })); else upAthleteDeb(a); const c = a.city.trim(); if (c) wxFetch(c).then(() => { const el = $('#cityInfo'); if (el) el.innerHTML = wxInfo(a); }); else { const el = $('#cityInfo'); if (el) el.innerHTML = wxInfo(a); } }, 900); }
   else if (k === 'constraints') { const a = A(ui.aid); a.constraints = t.value; S.role === 'athlete' ? saveMyNotes(a) : upAthleteDeb(a); }
+  else if (k === 'pay') { S.pay = S.pay || {}; S.pay[t.dataset.k] = t.value; clearTimeout(timers.pay); timers.pay = setTimeout(() => { const P = S.pay; dbw(() => sb.from('coach_pay').upsert({ coach_id: AUTH.user.id, holder: P.holder || null, iban: P.iban || null, bic: P.bic || null, phone: P.phone || null, note: P.note || null, updated_at: new Date().toISOString() })); }, 700); }
   else if (k === 'coach') { S.coach = t.value; clearTimeout(timers.coach); timers.coach = setTimeout(() => dbw(() => sb.from('profiles').update({ coach_name: S.coach }).eq('id', AUTH.user.id)), 600); }
   else if (k === 'pmDur') { ui.pm.dur = +t.value; ui.gen = null; }
   else if (k === 'pmFmt') { ui.pm.fmt = t.value; ui.gen = null; }
