@@ -409,7 +409,7 @@ function pushCard() {
 }
 const saveMyNotes = a => { clearTimeout(timers.notes); timers.notes = setTimeout(() => dbw(() => sb.rpc('athlete_update_notes', { p_athlete: a.id, p_constraints: a.constraints || '', p_days_off: a.daysOff || [] })), 600); };
 function upAthleteDeb(a) { clearTimeout(timers[a.id]); timers[a.id] = setTimeout(() => upAthlete(a), 600); }
-const sessRow = (a, d, s) => ({ id: s.id, athlete_id: a.id, date: d, type: s.type, title: s.title || '', dur: num(s.dur), dist: num(s.dist), elev: num(s.elev), descr: s.desc || '', done: !!s.done, feel: s.feel || '', rpe: s.rpe ? +s.rpe : null });
+const sessRow = (a, d, s) => ({ id: s.id, athlete_id: a.id, date: d, type: s.type, title: s.title || '', dur: num(s.dur), dist: num(s.dist), elev: num(s.elev), real_dur: num(s.realDur), real_dist: num(s.realDist), descr: s.desc || '', done: !!s.done, feel: s.feel || '', rpe: s.rpe ? +s.rpe : null });
 const upSession = (a, d, s) => dbw(() => sb.from('sessions').upsert(sessRow(a, d, s)));
 const tplRow = t => ({ id: t.id, coach_id: AUTH.user.id, disc: t.disc || 'run', title: t.title, type: t.type, dur: num(t.dur), dist: num(t.dist), elev: num(t.elev), descr: t.desc || '' });
 
@@ -434,7 +434,7 @@ async function loadAll() {
     fetchAll('goals', ['date', 'id']), fetchAll('messages', ['created_at', 'id']), fetchAll('templates', ['title', 'id'])]);
   const by = {};
   S.athletes = ath.map(r => { const a = { id: r.id, name: r.name, code: r.code, archived: r.archived, disc: r.disc, fcmax: nz(r.fcmax), fcrest: nz(r.fcrest), vma: nz(r.vma), ftp: nz(r.ftp), weight: nz(r.weight), hxPace: r.hx_pace || '', sports: r.sports || [], paidUntil: r.paid_until || '', hx: r.hx || {}, city: r.city || '', constraints: r.constraints || '', daysOff: r.days_off || [], user_id: r.user_id, weeks: {}, goals: [], sessions: {}, messages: [] }; by[a.id] = a; return a; });
-  ses.forEach(r => { const a = by[r.athlete_id]; if (a) (a.sessions[r.date] = a.sessions[r.date] || []).push({ id: r.id, type: STYPES[r.type] ? r.type : 'other', title: r.title, dur: nz(r.dur), dist: nz(r.dist), elev: nz(r.elev), desc: r.descr, done: r.done, feel: r.feel, rpe: r.rpe || '', byAthlete: !!r.by_athlete }); });
+  ses.forEach(r => { const a = by[r.athlete_id]; if (a) (a.sessions[r.date] = a.sessions[r.date] || []).push({ id: r.id, type: STYPES[r.type] ? r.type : 'other', title: r.title, dur: nz(r.dur), dist: nz(r.dist), elev: nz(r.elev), realDur: nz(r.real_dur), realDist: nz(r.real_dist), desc: r.descr, done: r.done, feel: r.feel, rpe: r.rpe || '', byAthlete: !!r.by_athlete }); });
   wk.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].weeks[r.week] = r.type; });
   gl.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].goals.push({ id: r.id, name: r.name, date: r.date, prio: r.prio, details: r.details || '', byAthlete: !!r.by_athlete }); });
   msg.forEach(r => { if (by[r.athlete_id]) by[r.athlete_id].messages.push({ id: r.id, from: r.sender, text: r.body, ts: Date.parse(r.created_at), read: r.read, audioPath: r.audio_path || '' }); });
@@ -510,7 +510,7 @@ function weekStats(a, mon) {
   for (let i = 0; i < 7; i++) for (const s of sessOf(a, addDays(mon, i))) {
     if (s.type === 'rest') continue;
     n++; min += +s.dur || 0; km += +s.dist || 0;
-    if (s.done) { done++; dmin += +s.dur || 0; dkm += +s.dist || 0; }
+    if (s.done) { done++; dmin += +(s.realDur || s.dur) || 0; dkm += +(s.realDist || s.dist) || 0; }
   }
   return { n, done, min, dmin, km, dkm };
 }
@@ -624,7 +624,7 @@ function planView(a) {
       ${arr.map(s => `<div class="sess ${s.done ? 'done' : ''}">
         <span class="sd" style="background:${STYPES[s.type][1]}"></span>
         <div class="sp" data-a="editSess" data-d="${k}" data-id="${s.id}" style="cursor:pointer"><div class="t">${esc(s.title || STYPES[s.type][0])}</div>
-        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + fmtDur(s.dur) : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div></div>
+        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + fmtDur(s.dur) : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.done && (s.realDur || s.realDist) ? ' · <b>réalisé ' + [s.realDur ? fmtDur(s.realDur) : '', s.realDist ? s.realDist + ' km' : ''].filter(Boolean).join(' · ') + '</b>' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div></div>
         <button class="chk ${s.done ? 'on' : ''}" data-a="toggleDone" data-d="${k}" data-id="${s.id}" aria-label="Réalisée">✓</button></div>`).join('')}
     </div>`;
   }
@@ -1096,6 +1096,7 @@ const athSessModal = (s, d) => `<h3>${esc(s.title || STYPES[s.type][0])}</h3><p 
   ${s.desc ? `<div class="card" style="margin-top:12px;white-space:pre-wrap">${esc(s.desc)}</div>` : ''}
   ${ppgOf(s, (A(ui.aid) || {}).disc || 'run') ? `<button type="button" class="btn block" style="margin-top:10px" data-a="genFromSess" data-d="${d}" data-id="${s.id}">🎲 Générer ma séance</button>` : ''}
   ${(() => { const tg = targets(s.desc, A(ui.aid) || {}); return tg.length ? `<label class="f">Mes repères</label><div class="chips">${tg.map(([l, v]) => `<span class="chip">${esc(l)} → <b>${esc(v)}</b></span>`).join('')}</div>` : ''; })()}
+  <div class="grid2"><div><label class="f">Ma durée (min)</label><input type="number" inputmode="numeric" id="realDur" value="${esc(s.realDur)}" placeholder="${s.dur ? 'prévu ' + esc(s.dur) : ''}"></div><div><label class="f">Mes km</label><input type="number" inputmode="decimal" step="0.1" id="realDist" value="${esc(s.realDist)}" placeholder="à remplir"></div></div>
   <label class="f">Effort ressenti (RPE)</label><div class="rpe" id="rpeList">${rpeBtns(s)}</div>
   <label class="f">Description de ma séance</label><textarea id="feel" placeholder="Ex. jambes lourdes au début, bonnes sensations ensuite">${esc(s.feel)}</textarea>
   <div style="height:14px"></div><button class="btn block" data-a="saveFeel" data-d="${d}" data-id="${s.id}">Enregistrer</button>
@@ -1221,7 +1222,10 @@ const A_ = {
   /* séances */
   addSess(t) { ui.modal = sessForm({}, t.dataset.d); render(); },
   editSess(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); ui.modal = S.role === 'athlete' ? athSessModal(s, t.dataset.d) : sessForm(s, t.dataset.d); render(); },
-  saveFeel(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); s.feel = $('#feel').value.trim(); const rv = ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : null; if (rv) s.rpe = rv; dbw(() => sb.rpc('athlete_save_session', { p_id: s.id, p_done: !!s.done, p_feel: s.feel, p_rpe: rv })); closeM(); },
+  saveFeel(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); s.feel = $('#feel').value.trim(); const rv = ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : null; if (rv) s.rpe = rv; dbw(() => sb.rpc('athlete_save_session', { p_id: s.id, p_done: !!s.done, p_feel: s.feel, p_rpe: rv }));
+    const nv = id => { const v = parseFloat(String(($(id) || {}).value || '').replace(',', '.')); return isFinite(v) && v > 0 ? v : null; }, rd = nv('#realDur'), rk = nv('#realDist');
+    if ($('#realDur') && (rd !== (s.realDur ? +s.realDur : null) || rk !== (s.realDist ? +s.realDist : null))) { s.realDur = rd || ''; s.realDist = rk || ''; dbw(() => sb.rpc('athlete_save_real', { p_id: s.id, p_dur: rd, p_dist: rk })); }
+    closeM(); },
   setRpe(t) { ui.rpeTmp = { id: t.dataset.id, v: +t.dataset.k }; document.querySelectorAll('#rpeList button').forEach(b => b.classList.toggle('on', b === t)); },
   fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = ''; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; estUpd(true); },
   saveSess(t) {
