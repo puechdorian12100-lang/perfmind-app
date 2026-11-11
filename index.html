@@ -945,7 +945,7 @@ const sessForm = (s, d) => { s.type = s.type || typesFor(A(ui.aid))[0]; return `
 function estBoth(title, desc, a, type) { const d = estimate(desc, a, type); if (d.sec) return d; const t = estimate(title, a, type); return t.sec ? { ...t, fromTitle: true } : d; }
 function estHtml(r, tg, a) {
   let h = '';
-  if (r.sec) h += `<div style="font-weight:800;color:var(--or)">⏱ Durée calculée${r.fromTitle ? ' (titre)' : ''} : ${fmtMin(r.sec)}</div>`;
+  if (r.sec) h += `<div style="font-weight:800;color:var(--or)">⏱ Durée calculée${r.fromTitle ? ' (titre)' : ''} : ${fmtMin(r.sec)}</div><div class="small mut">Modifiable dans le champ Durée. La distance se remplit à la main.</div>`;
   if (r.needVma) h += `<div class="small mut">Renseigne la VMA ${S.role === 'coach' ? 'de l\'athlète' : ''} pour convertir les distances en temps.</div>`;
   if (r.sec && +a.vma && !r.needVma) h += `<div class="small mut">Distances converties en temps avec une VMA de ${String(a.vma).replace('.', ',')} km/h. Sans intensité précisée : footing à ${calcCfg().foot} % VMA.</div>`;
   if (tg.length) h += `<div class="chips">${tg.map(([l, v]) => `<span class="chip">${esc(l)} → <b>${esc(v)}</b></span>`).join('')}</div>`;
@@ -971,7 +971,7 @@ function memoTpl(only) {
   const have = new Set(S.templates.map(sigOf)), rep = repeated(), add = [];
   for (const [k, v] of Object.entries(rep)) {
     if (v.n < 2 || have.has(k) || (only && k !== only)) continue;
-    const s = v.s, tp = { id: uid(), title: tplTitle(s), type: s.type, disc: v.disc, dur: s.dur, dist: s.dist, elev: s.elev, desc: s.desc || '' };
+    const s = v.s, tp = { id: uid(), title: tplTitle(s), type: s.type, disc: v.disc, dur: s.dur, dist: '', elev: s.elev, desc: s.desc || '' };
     S.templates.push(tp); have.add(k); add.push(tp);
   }
   if (add.length) dbw(() => sb.from('templates').insert(add.map(tplRow)));
@@ -1223,7 +1223,7 @@ const A_ = {
   editSess(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); ui.modal = S.role === 'athlete' ? athSessModal(s, t.dataset.d) : sessForm(s, t.dataset.d); render(); },
   saveFeel(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); s.feel = $('#feel').value.trim(); const rv = ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : null; if (rv) s.rpe = rv; dbw(() => sb.rpc('athlete_save_session', { p_id: s.id, p_done: !!s.done, p_feel: s.feel, p_rpe: rv })); closeM(); },
   setRpe(t) { ui.rpeTmp = { id: t.dataset.id, v: +t.dataset.k }; document.querySelectorAll('#rpeList button').forEach(b => b.classList.toggle('on', b === t)); },
-  fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = tp.dist; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; estUpd(true); },
+  fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = ''; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; estUpd(true); },
   saveSess(t) {
     const a = A(ui.aid), f = new FormData($('#f')), d = t.dataset.d, id = t.dataset.id;
     const v = { type: f.get('type'), title: f.get('title').trim(), dur: f.get('dur'), dist: f.get('dist'), elev: f.get('elev'), desc: f.get('desc'), feel: f.get('feel') || '' };
