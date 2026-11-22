@@ -658,6 +658,7 @@ function athleteView() {
   <div class="pill-row">${SUBS.map(([k, l]) => `<button class="pill ${ui.sub === k ? 'on' : ''}" data-a="sub" data-k="${k}">${l}</button>`).join('')}</div>${inner}`;
 }
 
+function dupCount(a, mon) { let n = 0; for (let i = 0; i < 7; i++) { const arr = a.sessions[iso(addDays(mon, i))] || [], c = arr.filter(s => !s.byAthlete && !s.done && s.type !== 'rest'); n += arr.filter(s => s.byAthlete && s.done && (c.some(p => sportFam(p.type, a) === sportFam(s.type, a)) || c.length === 1)).length; } return n; }
 function planView(a) {
   const mon = ui.wk, today = iso(new Date());
   const wt = a.weeks[iso(mon)];
@@ -678,7 +679,7 @@ function planView(a) {
     </div>`;
   }
   return `<div class="row" style="margin-bottom:12px"><button class="ic-btn" data-a="prev">‹</button><div class="sp" style="text-align:center"><div style="font-weight:700">${fmtD(mon)} – ${fmtD(addDays(mon, 6))}</div>${wt ? `<span class="badge" style="background:${WTYPES[wt][2]};color:#fff">${WTYPES[wt][1]} ${WTYPES[wt][0]}</span>` : '<span class="small mut">Type de semaine non défini</span>'}</div><button class="ic-btn" data-a="next">›</button></div>
-  <div class="row" style="margin-bottom:12px"><button class="btn sm ghost" data-a="today">Aujourd'hui</button>${S.role === 'coach' ? '<button class="btn sm ghost" data-a="copyWeek">⧉ Copier</button><button class="btn sm ghost" data-a="tplLib">📚 Modèles</button>' : ''}</div>
+  <div class="row" style="margin-bottom:12px"><button class="btn sm ghost" data-a="today">Aujourd'hui</button>${S.role === 'coach' ? '<button class="btn sm ghost" data-a="copyWeek">⧉ Copier</button><button class="btn sm ghost" data-a="tplLib">📚 Modèles</button>' + (dupCount(a, mon) ? `<button class="btn sm" data-a="mergeDup">⚡ Fusionner ${dupCount(a, mon)} doublon${dupCount(a, mon) > 1 ? 's' : ''}</button>` : '') : ''}</div>
   <div class="card row" style="justify-content:space-around;text-align:center"><div><div class="title">${st.done}/${st.n}</div><div class="tag">séances</div></div><div><div class="title">${Math.round(st.dmin / 6) / 10}<span class="mut" style="font-size:13px"> / ${Math.round(st.min / 6) / 10} h</span></div><div class="tag">durée</div></div><div><div class="title">${Math.round(st.dkm)}<span class="mut" style="font-size:13px"> / ${Math.round(st.km)} km</span></div><div class="tag">distance</div></div></div>
   ${days}`;
 }
@@ -1161,10 +1162,13 @@ const A_ = {
       + `<button class="btn ghost block" style="margin-top:8px" data-a="closeModal">Fermer</button>`; render(); },
   payAdd(t) { const a = A(t.dataset.id); if (!a) return; a.paidUntil = iso(addMonth(payOk(a) ? parse(a.paidUntil) : new Date())); const v = a.paidUntil; dbw(() => sb.from('athletes').update({ paid_until: v }).eq('id', a.id)); closeM(); toast('Paiement validé jusqu\'au ' + frD(v)); },
   payCancel(t) { const a = A(t.dataset.id); if (!a) return; a.paidUntil = ''; dbw(() => sb.from('athletes').update({ paid_until: null }).eq('id', a.id)); closeM(); toast('Paiement annulé'); },
-  addDone(t) { const a = A(S.linked), d = t.dataset.d, id = uid(); ui.rpeTmp = null; const sid = { id }; ui.doneId = id;
+  addDone(t) { const a = A(S.linked), d = t.dataset.d, pend = (a.sessions[d] || []).filter(x => !x.done && !x.byAthlete && x.type !== 'rest');
+    if (pend.length && !t.dataset.free && !t.dataset.pid) { ui.modal = `<h3>Séance faite</h3><p class="small mut" style="margin:0 0 10px">Laquelle as-tu réalisée ? Choisis ta séance planifiée pour éviter un doublon.</p>${pend.map(s => `<button type="button" class="btn ghost block" style="margin-top:8px;text-align:left" data-a="addDone" data-d="${d}" data-pid="${s.id}">${esc(s.title || STYPES[s.type][0])} · ${STYPES[s.type][0]}${s.dur ? ' · ' + s.dur + ' min' : ''}</button>`).join('')}<button type="button" class="btn block" style="margin-top:12px" data-a="addDone" data-d="${d}" data-free="1">+ Une autre séance (non planifiée)</button><button type="button" class="btn ghost block" style="margin-top:8px" data-a="closeModal">Annuler</button>`; render(); return; }
+    const lk = t.dataset.pid ? pend.concat((a.sessions[d] || []).filter(x => x.id === t.dataset.pid)).find(x => x.id === t.dataset.pid) : null; ui.doneLink = lk ? lk.id : null;
+    const id = lk ? lk.id : uid(); ui.rpeTmp = null; ui.doneId = id;
     ui.modal = `<h3>Séance faite</h3><p class="small mut" style="margin:0">${parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
-    <form id="f"><label class="f">Type</label><select name="type">${typesFor(a).filter(k => k !== 'rest').map(k => `<option value="${k}">${STYPES[k][0]}</option>`).join('')}</select>
-    <label class="f">Titre</label><input type="text" name="title" placeholder="Ex. Sortie vélo avec les copains">
+    <form id="f">${lk ? `<p style="margin:10px 0 0;font-weight:700">${esc(lk.title || STYPES[lk.type][0])}</p><input type="hidden" name="type" value="${lk.type}"><input type="hidden" name="title" value="">` : `<label class="f">Type</label><select name="type">${typesFor(a).filter(k => k !== 'rest').map(k => `<option value="${k}">${STYPES[k][0]}</option>`).join('')}</select>
+    <label class="f">Titre</label><input type="text" name="title" placeholder="Ex. Sortie vélo avec les copains">`}
     <div class="grid2"><div><label class="f">Durée (min ou 1h30)</label><input type="text" inputmode="text" placeholder="ex. 90 ou 1h30" name="dur"></div><div><label class="f">Distance (km)</label><input type="number" inputmode="decimal" step="0.1" name="dist"></div></div>
     <label class="f">Dénivelé positif (m)</label><input type="number" inputmode="numeric" name="elev">
     <label class="f">Effort ressenti (RPE)</label><div class="rpe" id="rpeList">${rpeBtns({ id, rpe: 0 })}</div>
@@ -1174,6 +1178,8 @@ const A_ = {
     const type = String(f.get('type')), title = String(f.get('title')).trim(), feel = String(f.get('feel')).trim(), rpe = ui.rpeTmp && ui.rpeTmp.id === id ? ui.rpeTmp.v : null;
     const n = k => { const v = parseFloat(String(f.get(k)).replace(',', '.')); return isFinite(v) && v > 0 ? v : null; };
     const dur = parseDur(f.get('dur')) || null, dist = n('dist'), elev = n('elev');
+    if (ui.doneLink) { const p = (a.sessions[d] || []).find(x => x.id === ui.doneLink); if (p) { Object.assign(p, { done: true, dur: dur || p.dur, dist: dist || p.dist, elev: elev || p.elev, feel: feel || p.feel, rpe: rpe || p.rpe });
+      dbw(() => sb.rpc('athlete_complete_session', { p_id: p.id, p_dur: dur, p_dist: dist, p_elev: elev, p_feel: feel, p_rpe: rpe })); ui.modal = null; ui.rpeTmp = null; ui.doneId = null; ui.doneLink = null; render(); toast('Séance validée'); return; } }
     const se = { id, type, title, dur: dur || '', dist: dist || '', elev: elev || '', desc: '', done: true, feel, rpe: rpe || '', byAthlete: true };
     (a.sessions[d] = a.sessions[d] || []).push(se);
     dbw(() => sb.rpc('athlete_add_session', { p_id: id, p_athlete: a.id, p_date: d, p_type: type, p_title: title, p_dur: dur, p_dist: dist, p_elev: elev, p_descr: '', p_feel: feel, p_rpe: rpe }));
@@ -1210,6 +1216,12 @@ const A_ = {
   /* séances */
   addSess(t) { ui.modal = sessForm({}, t.dataset.d); render(); },
   editSess(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); ui.modal = S.role === 'athlete' ? athSessModal(s, t.dataset.d) : sessForm(s, t.dataset.d); render(); },
+  mergeDup() { const a = A(ui.aid); let n = 0;
+    for (let i = 0; i < 7; i++) { const k = iso(addDays(ui.wk, i));
+      for (const x of (a.sessions[k] || []).filter(s => s.byAthlete && s.done)) { const cand = (a.sessions[k] || []).filter(s => !s.byAthlete && !s.done && s.type !== 'rest'), p = cand.find(s => sportFam(s.type, a) === sportFam(x.type, a)) || (cand.length === 1 ? cand[0] : null); if (!p) continue;
+        Object.assign(p, { done: true, dur: x.dur || p.dur, dist: x.dist || p.dist, elev: x.elev || p.elev, rpe: x.rpe || p.rpe, feel: x.feel || p.feel });
+        a.sessions[k] = a.sessions[k].filter(s => s !== x); upSession(a, k, p); dbw(() => sb.from('sessions').delete().eq('id', x.id)); n++; } }
+    render(); toast(n ? n + ' doublon' + (n > 1 ? 's fusionnés' : ' fusionné') : 'Aucun doublon à fusionner'); },
   saveFeel(t) { const a = A(ui.aid), s = (a.sessions[t.dataset.d] || []).find(x => x.id === t.dataset.id); s.feel = $('#feel').value.trim(); const rv = ui.rpeTmp && ui.rpeTmp.id === s.id ? ui.rpeTmp.v : null; if (rv) s.rpe = rv; dbw(() => sb.rpc('athlete_save_session', { p_id: s.id, p_done: !!s.done, p_feel: s.feel, p_rpe: rv })); closeM(); },
   setRpe(t) { ui.rpeTmp = { id: t.dataset.id, v: +t.dataset.k }; document.querySelectorAll('#rpeList button').forEach(b => b.classList.toggle('on', b === t)); },
   fromTpl(t) { const tp = S.templates.find(x => x.id === t.dataset.id), f = $('#f'); f.type.value = tp.type; f.title.value = tp.title; f.dur.value = tp.dur; f.dist.value = tp.dist; f.elev.value = tp.elev || ''; f.desc.value = tp.desc; f.dur.dataset.man = ''; f.dist.dataset.man = ''; estUpd(true); },
