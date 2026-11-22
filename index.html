@@ -89,6 +89,11 @@ textarea{min-height:90px;resize:vertical}
 .sbadge{display:inline-block;font-size:12px;font-weight:800;text-transform:uppercase;letter-spacing:.06em;padding:5px 12px;border-radius:999px;margin-bottom:5px}
 .sess .t{font-weight:700;font-size:14px}
 .sess .m{font-size:12px;color:var(--mut)}
+.sfeelbig{margin:12px 0 4px;padding:12px 14px;background:var(--or-soft);border-left:4px solid var(--or);border-radius:10px;font-size:16px;line-height:1.5;white-space:pre-wrap;word-break:break-word;max-height:none}
+.sfeelbig b{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--or);margin-bottom:4px}
+.sess .sdesc{font-size:14px;line-height:1.45;color:var(--ink);margin-top:6px;white-space:pre-wrap;word-break:break-word}
+.sess .sfeel{font-size:14px;line-height:1.45;margin-top:8px;padding:9px 11px;background:var(--or-soft);border-left:3px solid var(--or);border-radius:8px;white-space:pre-wrap;word-break:break-word}
+.sess .sfeel b{display:block;font-size:11px;letter-spacing:.06em;text-transform:uppercase;color:var(--or);margin-bottom:2px}
 .chk{width:30px;height:30px;border-radius:50%;border:2px solid var(--line);display:grid;place-items:center;font-size:15px;color:transparent;flex:none}
 .chk.on{background:var(--or);border-color:var(--or);color:var(--on-or)}
 .sess.done .t{text-decoration:line-through;color:var(--mut)}
@@ -119,6 +124,8 @@ tr:last-child td{border-bottom:0}
 .dsep{text-align:center;font-size:11px;color:var(--mut);text-transform:uppercase;letter-spacing:.08em;margin:12px 0 4px}
 .composer{position:sticky;bottom:calc(116px + env(safe-area-inset-bottom));display:flex;gap:8px;background:var(--bg);padding:10px 0}
 .composer input{flex:1}
+.composer textarea{flex:1;min-height:44px;height:44px;max-height:132px;resize:none;line-height:1.35;padding:11px 14px;overflow-y:auto}
+.composer{align-items:flex-end}
 /* onboarding */
 .onb{min-height:100vh;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;padding:30px 24px}
 .onb img.mk{width:190px;margin-bottom:10px}
@@ -674,7 +681,7 @@ function planView(a) {
       ${arr.map(s => `<div class="sess ${s.done ? 'done' : ''}">
         <span class="sd" style="background:${FAM_COL[sportFam(s.type, a)]}"></span>
         <div class="sp" data-a="editSess" data-d="${k}" data-id="${s.id}" style="cursor:pointer">${sportBadge(s.type, a)}<div class="t">${esc(s.title || STYPES[s.type][0])}</div>
-        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + s.dur + ' min' : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div></div>
+        <div class="m">${STYPES[s.type][0]}${s.dur ? ' · ' + s.dur + ' min' : ''}${s.dist ? ' · ' + s.dist + ' km' : ''}${s.elev ? ' · ' + s.elev + ' m D+' : ''}${s.rpe ? ' · RPE ' + s.rpe : ''}${s.byAthlete ? ' · ajoutée par l\'athlète' : ''}</div>${s.desc ? `<div class="sdesc">${esc(s.desc)}</div>` : ''}${s.feel ? `<div class="sfeel"><b>${S.role === 'coach' ? 'Ressenti de l\'athlète' : 'Mon ressenti'}</b>${esc(s.feel)}</div>` : ''}</div>
         <button class="chk ${s.done ? 'on' : ''}" data-a="toggleDone" data-d="${k}" data-id="${s.id}" aria-label="Réalisée">✓</button></div>`).join('')}
     </div>`;
   }
@@ -830,7 +837,7 @@ function threadView(a) {
   return `<div class="row" style="margin-bottom:8px">${me === 'coach' ? '<button class="ic-btn" data-a="backThread">‹</button>' : ''}<h1 class="title sp">${me === 'coach' ? esc(a.name) : 'Mon coach'}</h1></div>
   <div style="min-height:50vh">${out || '<div class="empty">Écris le premier message.</div>'}</div>
   ${ui.rec ? `<div class="composer" style="align-items:center"><button class="ic-btn" type="button" data-a="recCancel" aria-label="Annuler">✕</button><div class="sp" style="font-weight:700;color:#B3261E">● <span id="rect">0:00</span> · enregistrement…</div><button class="btn" type="button" data-a="recSend" aria-label="Envoyer le vocal">➤</button></div>`
-  : `<form class="composer" data-a="send"><button class="ic-btn" type="button" data-a="recStart" aria-label="Message vocal">🎤</button><input type="text" id="msgin" placeholder="Message…" autocomplete="off"><button class="btn" type="submit">➤</button></form>`}`;
+  : `<form class="composer" data-a="send"><button class="ic-btn" type="button" data-a="recStart" aria-label="Message vocal">🎤</button><textarea id="msgin" rows="1" enterkeyhint="enter" placeholder="Message…" autocomplete="off"></textarea><button class="btn" type="submit">➤</button></form>`}`;
 }
 function recFinish(send) {
   const r = ui.rec; if (!r) return; clearInterval(r.timer); ui.rec = null;
@@ -975,6 +982,7 @@ function stopTimer() { TM = null; cancelAnimationFrame(raf); const el = $('#tm')
 
 /* ============ Modales ============ */
 const sessForm = (s, d) => { s.type = s.type || typesFor(A(ui.aid))[0]; return `<h3>${s.id ? 'Modifier la séance' : 'Nouvelle séance'}</h3><p class="small mut" style="margin:0">${parse(d).toLocaleDateString('fr-FR', { weekday: 'long', day: 'numeric', month: 'long' })}</p>
+  ${s.id && (s.feel || s.rpe) ? `<div class="sfeelbig"><b>Retour de l'athlète${s.rpe ? ' · RPE ' + s.rpe + '/10 (' + RPE_L[s.rpe - 1] + ')' : ''}</b>${s.feel ? esc(s.feel) : '<span class="mut">Pas de description.</span>'}</div>` : ''}
   ${!s.id && S.role === 'coach' ? `<label class="f">Depuis un modèle</label><div id="tplPick">${tplPick('')}</div>` : ''}
   <form id="f"><label class="f">Type</label><select name="type" data-in="stype">${[...new Set([...typesFor(A(ui.aid)), s.type])].map(k => `<option value="${k}" ${s.type === k ? 'selected' : ''}>${STYPES[k][0]}</option>`).join('')}</select><div id="ppgPick">${ppgPick(s.type)}</div>
   <label class="f">Titre</label><input type="text" name="title" value="${esc(s.title)}" placeholder="Ex. 8 × 400 m">
@@ -983,8 +991,7 @@ const sessForm = (s, d) => { s.type = s.type || typesFor(A(ui.aid))[0]; return `
   <label class="f">Dénivelé positif (m)</label><input type="number" inputmode="numeric" name="elev" value="${esc(s.elev)}">
   <label class="f">Description</label><textarea name="desc" data-in="sdesc" placeholder="Ex. 15′ échauffement + 6x3′ / 1′30 récup + 10′ retour au calme">${esc(s.desc)}</textarea>
   <div id="est">${estHtml(estimate(s.desc, A(ui.aid), s.type), targets(s.desc, A(ui.aid) || {}), A(ui.aid) || {})}</div>
-  ${s.id && s.rpe ? `<label class="f">RPE (athlète)</label><div class="card" style="margin:0"><b>${s.rpe}/10</b> (${RPE_L[s.rpe - 1]})</div>` : ''}
-  ${s.id ? `<label class="f">Description de l'athlète</label><input type="text" name="feel" value="${esc(s.feel)}" placeholder="Ex. jambes lourdes, bonne séance">` : ''}
+  ${s.id ? `<textarea name="feel" hidden>${esc(s.feel)}</textarea>` : ''}
   <div style="height:14px"></div><button class="btn block" type="button" data-a="saveSess" data-d="${d}" data-id="${s.id || ''}">Enregistrer</button>
   ${S.role === 'coach' ? `<button class="btn ghost block" type="button" style="margin-top:8px" data-a="saveTpl">Enregistrer comme modèle</button>` : ''}
   ${s.id ? `<button class="btn danger block" type="button" style="margin-top:8px" data-a="delSess" data-d="${d}" data-id="${s.id}">Supprimer</button>` : ''}
@@ -1271,7 +1278,7 @@ const A_ = {
   /* messages */
   openThread(t) { ui.thread = t.dataset.id; render(); window.scrollTo(0, document.body.scrollHeight); },
   backThread() { ui.thread = null; render(); },
-  send(t, e) { e.preventDefault(); const i = $('#msgin'), v = i.value.trim(); if (!v) return; const a = S.role === 'coach' ? A(ui.thread) : A(S.linked); const m = { id: uid(), from: S.role, text: v, ts: Date.now(), read: false }; i.value = ''; a.messages.push(m); dbw(() => sb.from('messages').insert({ id: m.id, athlete_id: a.id, sender: S.role, body: v })); render(); window.scrollTo(0, document.body.scrollHeight); $('#msgin').focus(); },
+  send(t, e) { e.preventDefault(); const i = $('#msgin'), v = i.value.trim(); if (!v) return; const a = S.role === 'coach' ? A(ui.thread) : A(S.linked); const m = { id: uid(), from: S.role, text: v, ts: Date.now(), read: false }; i.value = ''; i.style.height = '44px'; a.messages.push(m); dbw(() => sb.from('messages').insert({ id: m.id, athlete_id: a.id, sender: S.role, body: v })); render(); window.scrollTo(0, document.body.scrollHeight); $('#msgin').focus(); },
   /* PPG */
   pmMode(t) { ui.pm.mode = t.dataset.k; ui.gen = null; render(); },
   ppgTab(t) { ui.ppgTab = t.dataset.k; render(); },
@@ -1333,6 +1340,9 @@ document.addEventListener('change', e => { if (false) { const f = e.target.files
 
 render();
 if ('serviceWorker' in navigator && location.protocol.startsWith('http')) navigator.serviceWorker.register('sw.js').catch(() => {});
+
+document.addEventListener('input', e => { const t = e.target; if (t && t.id === 'msgin') { t.style.height = '44px'; t.style.height = Math.min(t.scrollHeight, 132) + 'px'; } });
+document.addEventListener('keydown', e => { const t = e.target; if (t && t.id === 'msgin' && e.key === 'Enter' && (e.ctrlKey || e.metaKey)) { e.preventDefault(); const f = t.closest('form'); if (f) f.requestSubmit ? f.requestSubmit() : f.dispatchEvent(new Event('submit', { cancelable: true, bubbles: true })); } });
 </script>
 </body>
 </html>
